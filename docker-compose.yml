@@ -1,0 +1,154 @@
+# Cada instância do WordPress recebe a mesma fatia de CPU/memória; assim, adicionar
+# instâncias representa de fato mais capacidade (Locust, banco e WordPress dividem a máquina).
+x-wp-limites: &wp-limites
+  resources:
+    limits:
+      cpus: "1.0"
+      memory: 512M
+
+services:
+
+  # Balanceador de carga: único contêiner exposto à máquina hospedeira
+  nginx:
+    image: nginx:1.19.0
+    container_name: nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./${NGINX_CONF:-nginx.conf}:/etc/nginx/nginx.conf:ro
+      - ./wordpress:/usr/share/nginx/html
+    depends_on:
+      - wordpress1
+      - wordpress2
+      - wordpress3
+    networks:
+      - frontend
+    restart: always
+
+  # Três instâncias do WordPress (sem "ports": acessíveis só pelo Nginx)
+  wordpress1:
+    image: wordpress:5.4.2-php7.2-apache
+    container_name: wordpress1
+    deploy: *wp-limites
+    environment: &wp-env
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+      # host dinâmico: o site responde em localhost e em http://nginx (usado pelo Locust)
+      WORDPRESS_CONFIG_EXTRA: |
+        define('WP_HOME', 'http://' . (isset($$_SERVER['HTTP_HOST']) ? $$_SERVER['HTTP_HOST'] : 'localhost'));
+        define('WP_SITEURL', WP_HOME);
+        define('AUTOMATIC_UPDATER_DISABLED', true);  // fixa a versão 5.4.2: atualização automática no meio do teste corrompe o core
+    volumes:
+      - ./wordpress:/var/www/html
+      - ./wordpress-conf/mpm_prefork.conf:/etc/apache2/mods-available/mpm_prefork.conf:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - frontend
+      - backend
+    restart: always
+
+  wordpress2:
+    image: wordpress:5.4.2-php7.2-apache
+    container_name: wordpress2
+    deploy: *wp-limites
+    environment: *wp-env
+    volumes:
+      - ./wordpress:/var/www/html
+      - ./wordpress-conf/mpm_prefork.conf:/etc/apache2/mods-available/mpm_prefork.conf:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - frontend
+      - backend
+    restart: always
+
+  wordpress3:
+    image: wordpress:5.4.2-php7.2-apache
+    container_name: wordpress3
+    deploy: *wp-limites
+    environment: *wp-env
+    volumes:
+      - ./wordpress:/var/www/html
+      - ./wordpress-conf/mpm_prefork.conf:/etc/apache2/mods-available/mpm_prefork.conf:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - frontend
+      - backend
+    restart: always
+
+  # Banco de dados compartilhado (sem "ports": acessível só pelos WordPress)
+  db:
+    image: mysql:5.7
+    container_name: db
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress
+    command: --max-connections=1000
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - backend
+    restart: always
+
+  # ---- Trabalho 3: testes de carga (com "profiles": não sobem com "docker compose up") ----
+
+  # Gerador de carga; parâmetros via variáveis de ambiente (ver scripts/run_tests.sh)
+  locust:
+    image: locustio/locust:2.32.0
+    profiles: ["test"]
+    environment:
+      SCENARIO: ${SCENARIO:-1}
+    volumes:
+      - ./locust:/locust:ro
+      - ./results:/results
+    command: >
+      -f /locust/locustfile.py --headless --host http://nginx
+      -u ${USERS:-10} -r ${SPAWN_RATE:-10} -t ${RUN_TIME:-60s}
+      --csv /results/${CSV_PREFIX:-teste} --exit-code-on-error 0
+    networks:
+      - frontend
+
+  # WP-CLI: instala o WordPress e cria os posts (uid 33 = www-data da imagem wordpress)
+  wpcli:
+    image: wordpress:cli-2.4.0-php7.2
+    profiles: ["tools"]
+    user: "33:33"
+    environment: *wp-env
+    volumes:
+      - ./wordpress:/var/www/html
+      - ./conteudo:/conteudo:ro
+      - ./tema:/tema:ro
+    networks:
+      - frontend
+      - backend
+
+
+  # Gera os gráficos a partir dos CSVs do Locust
+  graficos:
+    image: python:3.12-slim
+    profiles: ["tools"]
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./results:/results
+    command: sh -c "pip install -q matplotlib && python /scripts/gerar_graficos.py /results"
+
+volumes:
+  db_data:
+
+networks:
+  frontend:   # Nginx <-> WordPress
+  backend:    # WordPress <-> MySQL (o Nginx não enxerga o banco)
