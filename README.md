@@ -87,6 +87,13 @@ O Locust foi adicionado ao `docker-compose.yml` (serviço `locust`, imagem `locu
 - `conteudo/` – imagem de ~1 MB (JPG), imagem de ~300 KB (JPG) e texto de ~400 KB usados nos posts.
 - `wordpress-conf/mpm_prefork.conf` – limita os processos do Apache (cabe nos 512 MB de cada instância).
 
+## Créditos das imagens
+
+As imagens dos posts são fotos reais do Wikimedia Commons, redimensionadas e recomprimidas para chegar a ~1 MB e ~300 KB:
+
+- `conteudo/datacenter_aereo_1mb.jpg`: [Data center roof.jpg](https://commons.wikimedia.org/wiki/File:Data_center_roof.jpg), de Rsparks3 (CC0).
+- `conteudo/mapa_datacenters_300kb.jpg`: [Data center infrastructure in the United States.jpg](https://commons.wikimedia.org/wiki/File:Data_center_infrastructure_in_the_United_States.jpg), do NREL/DOE (domínio público).
+
 ## Cenários
 
 | # | Post | Slug |

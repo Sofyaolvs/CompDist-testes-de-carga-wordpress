@@ -46,8 +46,8 @@ docker compose run --rm -T wpcli sh -c "rm -rf wp-content/themes/sd-moderno && c
 wp theme activate sd-moderno
 
 echo ">> Criando posts"
-criar_post_imagem cenario-1-imagem-1mb "Cenario 1 - imagem 1mb" /conteudo/imagem_1mb.jpg
+criar_post_imagem cenario-1-imagem-1mb "Cenario 1 - imagem 1mb" /conteudo/datacenter_aereo_1mb.jpg
 criar_post        cenario-2-texto-400kb "Cenario 2 - texto 400kb" /conteudo/texto_400kb.html
-criar_post_imagem cenario-3-imagem-300kb "Cenario 3 - imagem 300kb" /conteudo/imagem_300kb.jpg
+criar_post_imagem cenario-3-imagem-300kb "Cenario 3 - imagem 300kb" /conteudo/mapa_datacenters_300kb.jpg
 
 echo ">> Pronto. Teste: curl -s 'http://localhost/cenario-2-texto-400kb/' | wc -c"
