@@ -1,0 +1,79 @@
+# Trabalho 4: Link Extractor (serviço de extração em Python e em Ruby, com e sem cache Redis).
+# Os serviços usam "profiles"; o script scripts/run_tests.sh sobe só o que cada teste precisa.
+
+x-api-env: &api-env
+  CACHE: ${CACHE:-on}   # "on": consulta/grava no Redis; "off": sempre extrai da página
+  REDIS_HOST: redis
+
+x-api-limites: &api-limites
+  resources:
+    limits:
+      cpus: "1.0"
+      memory: 512M
+
+services:
+
+  # Páginas web de teste (substituem a "web ao vivo" da arquitetura original)
+  sites:
+    image: python:3.12-slim
+    profiles: ["python", "ruby"]
+    environment:
+      SITE_DELAY_MS: ${SITE_DELAY_MS:-300}
+    volumes:
+      - ./sites:/sites:ro
+    command: python /sites/server.py
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost/pagina-1.html')"]
+      interval: 2s
+      retries: 30
+
+  redis:
+    image: redis:7.4-alpine
+    profiles: ["python", "ruby"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 30
+
+  api-python:
+    build: ./api-python
+    profiles: ["python"]
+    deploy: *api-limites
+    environment: *api-env
+    depends_on: [redis, sites]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:5000/health')"]
+      interval: 2s
+      retries: 30
+
+  api-ruby:
+    build: ./api-ruby
+    profiles: ["ruby"]
+    deploy: *api-limites
+    environment: *api-env
+    depends_on: [redis, sites]
+    healthcheck:
+      test: ["CMD", "ruby", "-rnet/http", "-e", "exit(Net::HTTP.get_response(URI('http://localhost:5000/health')).is_a?(Net::HTTPSuccess) ? 0 : 1)"]
+      interval: 2s
+      retries: 30
+
+  # Gerador de carga; parâmetros via variáveis de ambiente (ver scripts/run_tests.sh)
+  locust:
+    image: locustio/locust:2.32.0
+    profiles: ["test"]
+    volumes:
+      - ./locust:/locust:ro
+      - ./results:/results
+    command: >
+      -f /locust/locustfile.py --headless --host http://${API_HOST:-api-python}:5000
+      -u ${USERS:-10} -r ${SPAWN_RATE:-10} -t ${RUN_TIME:-60s}
+      --csv /results/${CSV_PREFIX:-teste} --exit-code-on-error 0
+
+  # Gera os gráficos a partir dos CSVs do Locust
+  graficos:
+    image: python:3.12-slim
+    profiles: ["tools"]
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./results:/results
+    command: sh -c "pip install -q matplotlib && python /scripts/gerar_graficos.py /results"
